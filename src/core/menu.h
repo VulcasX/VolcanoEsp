@@ -1,0 +1,2 @@
+void drawIconMenu();
+void menuLoop();
