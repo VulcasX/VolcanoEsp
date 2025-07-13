@@ -15,3 +15,7 @@ extern const unsigned char arrow_up[];
 extern const unsigned char arrow_down[];
 extern const unsigned char arrow_left[];
 extern const unsigned char arrow_right[];
+extern const unsigned char epd_bitmap_littlefs_nofocus[];
+extern const unsigned char epd_bitmap_littlefs_focus[];
+extern const unsigned char epd_bitmap_webserver_nofocus[];
+extern const unsigned char epd_bitmap_webserver_focus[];

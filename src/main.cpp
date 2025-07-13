@@ -49,7 +49,7 @@ void setup() {
   #endif  
   // Inizializza il file system LittleFS
   if (!LittleFS.begin()) {
-    LittleFS.format(); 
+    //LittleFS.format(); 
     Serial.println("Errore LittleFS");
   }
   Serial.println("LittleFS OK");

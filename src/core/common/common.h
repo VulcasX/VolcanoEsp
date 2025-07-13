@@ -14,5 +14,17 @@ public:
     //Per il display, usa SSD1306_WHITE per il testo bianco su sfondo nero
     //Per il display, usa SSD1306_BLACK per il testo nero su sfondo bianco
     //Per il display, usa SSD1306_INVERSE per invertire i colori
-    static void print(const char* message,int display_pos_x, int display_pos_y,int display_char_size,uint16_t color);
+    static void print(const char* message,int display_pos_x, int display_pos_y,int display_char_size,uint16_t color, uint16_t color_bkg = SSD1306_BLACK);
+    static void println(const char* message,int display_pos_x, int display_pos_y,int display_char_size,uint16_t color, uint16_t color_bkg = SSD1306_BLACK);
+    // Funzione di debounce per i pulsanti
+    // Attende che il pulsante sia rilasciato prima di continuare
+    static void debounce(int waitTime);
+    //Funzione per il debounce dei pulsanti
+    // Attende che il pulsante sia rilasciato prima di continuare
+    static void debounceButton(int buttonPin, int waitTime);
+    // Funzione per calcolare lo spazio necessario per una stringa
+    // str è la stringa da calcolare
+    // textSize è la dimensione del testo (1, 2, 3, 4, 5)
+    // displayWidth è la larghezza del display in pixel
+    static int getSpacing(const char* str, int textSize);
 };

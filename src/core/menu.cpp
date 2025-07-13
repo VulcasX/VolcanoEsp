@@ -6,6 +6,8 @@
 #include "core/menu/WifiMenu.h"
 #include "core/menu/rfidmenu.h" // Include il menu RFID
 #include "core/config/config.h"
+#include "core/littlefs/littlefsweb.h" // Include il file system LittleFS
+#include "core/littlefs/littlefs.h"
 
 #define ICON_WIDTH  32
 #define ICON_HEIGHT 32
@@ -15,7 +17,7 @@
 // Array delle icone
 const unsigned char* iconList[] = {
   epd_bitmap_wifi_icon_nofocus, epd_bitmap_ble_icon_nofocus, epd_bitmap_nfc_icon_nofocus,
-  epd_bitmap_irda_icon_nofocus
+  epd_bitmap_irda_icon_nofocus, epd_bitmap_littlefs_nofocus, epd_bitmap_webserver_nofocus
 };
 
 const int iconCount = sizeof(iconList) / sizeof(iconList[0]);
@@ -91,6 +93,14 @@ void menuLoop() {
         // Qui puoi aggiungere il codice per il sottomenu IRDA
         display.println("IRDA Menu Placeholder");
         display.display();
+      }
+      else if (selectedIndex == 4) {
+        selectedIndex = 0;  // reset menu principale
+        // Qui puoi aggiungere il codice per il sottomenu LittleFS
+        fileManagerMenu(); // Entriamo nel sottomenu LittleFS
+      } else if (selectedIndex == 5) {
+        selectedIndex = 0;  // reset menu principale
+        webServerMenu(); // Entriamo nel sottomenu Web Server
       }
       delay(500);
       drawIconMenu();

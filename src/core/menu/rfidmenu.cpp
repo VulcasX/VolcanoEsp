@@ -1,3 +1,4 @@
+  
 #include <Arduino.h>
 #include <Adafruit_SSD1306.h>
 #include "rfidmenu.h"
@@ -17,7 +18,39 @@ const char* rfidItems[] = {
 const int rfidItemsCount = sizeof(rfidItems) / sizeof(rfidItems[0]);
 int selectedrfid = 0; 
 
+
+
+
+
+
 void rfidMenu() {
+  // Attendi che il pulsante SET sia rilasciato prima di mostrare il menu
+  while (digitalRead(buttonPin_SET) == LOW) {
+    delay(10);
+  }
+
+
+// Mostra il menu aggiornato
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println("RFID Menu");
+
+    for (int i = 0; i < rfidItemsCount; i++) {
+      display.setCursor(10, 16 + i * 10);
+      if (i == selectedrfid)
+        display.print("> ");
+      else
+        display.print("  ");
+      display.println(rfidItems[i]);
+    }
+    display.display();
+
+    delay(30); // evita flickering
+
+
+
   while (true) {
     // 🔼 Navigazione UP
     if (digitalRead(buttonPin_UP) == LOW) {
@@ -47,7 +80,7 @@ void rfidMenu() {
       else if (selectedrfid == 0) {
         //leggi rfid
         // rfid(); // Chiama la funzione per gestire la scansione RFID
-        dump(); // Chiama la funzione per gestire il dump RFID
+        rfid(); // Chiama la funzione per gestire il dump RFID
       } else if (selectedrfid == 1) {
         // Dump RFID
         dump();
