@@ -1,123 +1,58 @@
 #include <Wire.h>
-#include <Adafruit_PN532.h>
 #include <Adafruit_SSD1306.h>
-#include <LittleFS.h> // Include LittleFS per la gestione dei file
+#include <LittleFS.h>
 #include "rfid.h"
-#include "input.h" // Include il file di input per i pulsanti
-#include "core/config/config.h" // Include il file di configurazione
-#include "core/common/common.h" // Include il file comune per le funzioni condivise
-#include "core/common/virtualkeyboard.h" // Per getKeyboardInput
-// Calcolo area testo e barra di scorrimento
-#define CHAR_W 5
-#define CHAR_H 7
-#define CHAR_SPACING 1
+#include "input.h"
+#include "core/config/config.h"
+#include "core/common/common.h"
+#include "core/common/virtualkeyboard.h"
+
+// Definizioni per il display
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+#define CHAR_HEIGHT 8
 #define LINE_SPACING 1
-#define BAR_WIDTH ((int)(SCREEN_WIDTH * 0.05))
-#define TEXT_AREA_W (SCREEN_WIDTH - BAR_WIDTH)
-#define TEXT_AREA_H (SCREEN_HEIGHT)
-#define CHARS_PER_LINE (TEXT_AREA_W / (CHAR_W + CHAR_SPACING))
-#define LINES_ON_SCREEN (TEXT_AREA_H / (CHAR_H + LINE_SPACING))
+#define LINES_ON_SCREEN ((SCREEN_HEIGHT) / (CHAR_HEIGHT + LINE_SPACING))
+
 // PIN ESP32 I2C
 #define SDA_PIN 21
 #define SCL_PIN 22
-Adafruit_PN532 nfc(SDA_PIN, SCL_PIN);
+
+Extended_PN532 nfc(SDA_PIN, SCL_PIN);
+
 void rfid() {
   // Attendi che il pulsante SET sia rilasciato prima di mostrare il menu
   common::debounce(50); // Debounce per evitare rimbalzi del pulsante
-  char buffer[16];
   display.clearDisplay(); // Pulisce il display OLED
 
-// Instanzia il PN532 su I2C
-  common::println("Inizializzazione PN532...", 0, 0, 1, SSD1306_WHITE);
+  while(true) {
+    display.clearDisplay();
+    common::println("Menu RFID", 0, 0, 1, SSD1306_WHITE);
+    common::println("1. Read UID", 0, 10, 1, SSD1306_WHITE);
+    common::println("2. Dump Card", 0, 20, 1, SSD1306_WHITE);
+    common::println("3. MFCUK Tools", 0, 30, 1, SSD1306_WHITE);
+    common::println("RST: Exit", 0, 50, 1, SSD1306_WHITE);
+    display.display();
 
-  nfc.begin();
-
-  uint32_t versiondata = nfc.getFirmwareVersion();
-  if (!versiondata) {
-    common::println("PN532 non trovato!", 0, 0, 1, SSD1306_WHITE);
-    while (1); // blocca
-  }
-
-  /* Mostra info firmware
-  Serial.print("Found chip PN5"); 
-  Serial.println((versiondata>>24) & 0xFF, HEX);
-  Serial.print("Firmware ver. "); 
-  Serial.print((versiondata>>16) & 0xFF, DEC);
-  Serial.print('.'); 
-  Serial.println((versiondata>>8) & 0xFF, DEC);
-  */
-  //
-  display.clearDisplay(); // Pulisce il display OLED
-  common::print("Found chip PN5", 0, 0, 1, SSD1306_WHITE);
-  sprintf(buffer, "%02X", (versiondata>>24) & 0xFF);
-  int x = common::getSpacing("Found chip PN5", 1);
-  common::print(buffer, x, 0, 1, SSD1306_WHITE);
-  delay(3000);
-  /*
-  display.clearDisplay(); // Pulisce il display OLED  
-  common::println("Firmware ver. ", 0, 0, 1, SSD1306_WHITE);
-  sprintf(buffer, "%d", (versiondata>>16) & 0xFF);
-  common::print(buffer, 0, 0, 1, SSD1306_WHITE);
-  common::print(".", 0, 0, 17, SSD1306_WHITE);
-  sprintf(buffer, "%d", (versiondata>>8) & 0xFF);
-  common::println(buffer, 0, 31, 1, SSD1306_WHITE);
-  */
-  display.clearDisplay(); // Pulisce il display OLED
-  // Prepara la stringa completa della versione firmware
-  sprintf(buffer, "Firmware ver. %d.%d", (versiondata>>16) & 0xFF, (versiondata>>8) & 0xFF);
-  // Stampa la stringa completa su una sola riga
-  common::println(buffer, 0, 0, 1, SSD1306_WHITE);
-  delay(3000);
-  // Configura il PN532 per la lettura dei tag NFC
-  // Configura in modalità lettura passiva
-  nfc.SAMConfig();  
-  display.clearDisplay(); // Pulisce il display OLED
-  common::println("PN532 pronto!", 0, 0, 1, SSD1306_WHITE);
-  common::println("In attesa di tag NFC...", 0, 32, 1, SSD1306_WHITE);
-while(true) {
-  if (digitalRead(buttonPin_RST) == LOW) {
-    return;
-  }
-  boolean success;
-  uint8_t uid[7];    // buffer UID
-  uint8_t uidLength;
-  success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
-  /*
-  if (success) {
-    display.clearDisplay(); // Pulisce il display OLED
-    common::print("UID trovato: ", 0, 0, 1, SSD1306_WHITE);
-    for (uint8_t i = 0; i < uidLength; i++) {
-      //Serial.print(uid[i], HEX); Serial.print(" ");
-      // Stampa ogni byte UID su display e seriale
-      // Sposta la x per ogni byte per evitare sovrapposizioni
-      sprintf(buffer, "%02X ", uid[i]);
-      common::print(buffer, 0 + i*20, 1, 1, SSD1306_WHITE); // stampa ogni byte UID su display, spostando la x
-      Serial.print(buffer);
+    if(digitalRead(buttonPin_UP) == LOW) {
+      common::debounceButton(buttonPin_UP, 50);
+      rfid_read();
     }
-    common::println("", 0, 2, 1, SSD1306_WHITE);
-    delay(3000);
-  }
-  */
-/// Se il tag è stato trovato, mostra l'UID su display e seriale
- if (success) {
-    display.clearDisplay(); // Pulisce il display OLED
-    common::print("UID trovato: ", 0, 0, 1, SSD1306_WHITE);
-
-    int base_x = common::getSpacing("UID trovato: ", 1); // posizione dopo la stringa
-    int byte_width = common::getSpacing("FF", 1); // larghezza di un byte esadecimale
-
-    for (uint8_t i = 0; i < uidLength; i++) {
-        sprintf(buffer, "%02X", uid[i]);
-        int x = base_x + i * byte_width;
-        common::print(buffer, x, 0, 1, SSD1306_WHITE);
-        Serial.print(buffer);
-        Serial.print(" ");
+    else if(digitalRead(buttonPin_DWN) == LOW) {
+      common::debounceButton(buttonPin_DWN, 50);
+      dump();
     }
-    common::println("", 0, 2, 1, SSD1306_WHITE);
-    delay(3000);
-}
-}
-return; // Esci dalla funzione rfid
+    else if(digitalRead(buttonPin_SET) == LOW) {
+      common::debounceButton(buttonPin_SET, 50);
+      rfid_advanced_menu(); // Corretto da mfcuk_menu a rfid_advanced_menu
+    }
+    else if(digitalRead(buttonPin_RST) == LOW) {
+      while(digitalRead(buttonPin_RST) == LOW) delay(10);
+      common::debounceButton(buttonPin_RST, 50);
+      return;
+    }
+    delay(10);
+  }
 }
 /*
 void dump() {
@@ -539,32 +474,66 @@ void dump() {
 void dump() {
   common::debounce(50); // Debounce per evitare rimbalzi del pulsante
   char buffer[64];
-  Adafruit_PN532 nfc(SDA_PIN, SCL_PIN);
+  unsigned long rstPressStart = 0;
+  bool needRedraw = true;
+  uint8_t uid[7];
+  uint8_t uidLength;
+  unsigned long lastScanTime = 0;
 
   if (!LittleFS.begin()) {
     Serial.println("Errore inizializzazione LittleFS");
-    while (true);
+    display.clearDisplay();
+    common::println("Errore!", 0, 0, 1, SSD1306_WHITE);
+    common::println("File system non", 0, 12, 1, SSD1306_WHITE);
+    common::println("inizializzato", 0, 24, 1, SSD1306_WHITE);
+    display.display();
+    delay(2000);
+    return;
   }
 
+  // Inizializzazione esplicita del modulo NFC
   nfc.begin();
   if (!nfc.getFirmwareVersion()) {
     Serial.println("PN532 non trovato!");
-    while (1);
+    display.clearDisplay();
+    common::println("ERROR!", 0, 0, 1, SSD1306_WHITE);
+    common::println("PN532 non trovato", 0, 12, 1, SSD1306_WHITE);
+    display.display();
+    delay(2000);
+    return;
   }
-
   nfc.SAMConfig();
+  
   Serial.println("Avvicina il tag...");
-  display.clearDisplay();
-  common::println("Avvicina il tag...", 0, 0, 1, SSD1306_WHITE);
-
+  
   while (true) {
-    if (digitalRead(buttonPin_RST) == LOW) {
-      while (digitalRead(buttonPin_RST) == LOW) delay(10);
-      common::debounceButton(buttonPin_RST, 50);
-      return;
+    // Controllo per uscita con RST
+    if(digitalRead(buttonPin_RST) == LOW) {
+      if(rstPressStart == 0) rstPressStart = millis();
+      // Uscita dopo 100ms per una risposta veloce
+      if(millis() - rstPressStart > 100) {
+        common::debounceButton(buttonPin_RST, 50);
+        return;
+      }
+    } else {
+      rstPressStart = 0;
     }
-    uint8_t uid[7];
-    uint8_t uidLength;
+    
+    // Ridisegna solo quando necessario per evitare flickering
+    if (needRedraw) {
+      display.clearDisplay();
+      common::println("Avvicina il tag...", 0, 0, 1, SSD1306_WHITE);
+      common::println("", 0, 24, 1, SSD1306_WHITE); 
+      common::println("RST: Esci", 0, 48, 1, SSD1306_WHITE);
+      display.display();
+      needRedraw = false;
+    }
+    
+    // Limitare la frequenza di scansione per ridurre il carico CPU
+    if (millis() - lastScanTime > 100) {
+      lastScanTime = millis();
+      uint8_t uid[7];
+      uint8_t uidLength;
 
     if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
       Serial.println("Tag trovato!");
@@ -738,4 +707,81 @@ void dump() {
     }
     delay(300);
   }
+  }
+}
+
+void rfid_read() {
+    // Attendi che il pulsante SET sia rilasciato prima di mostrare il menu
+    common::debounce(50); // Debounce per evitare rimbalzi del pulsante
+    char buffer[16];
+    bool needRedraw = true;
+    bool cardFound = false;
+    uint8_t uid[7];    // buffer UID
+    uint8_t uidLength;
+    unsigned long lastScanTime = 0;
+    unsigned long rstPressStart = 0;
+    
+    // Inizializzazione esplicita del modulo NFC
+    nfc.begin();
+    if (!nfc.getFirmwareVersion()) {
+        display.clearDisplay();
+        common::println("ERROR!", 0, 0, 1, SSD1306_WHITE);
+        common::println("PN532 non trovato", 0, 12, 1, SSD1306_WHITE);
+        display.display();
+        delay(2000);
+        return;
+    }
+    nfc.SAMConfig();
+    while(true) {
+        // Controllo per uscita con RST
+        if(digitalRead(buttonPin_RST) == LOW) {
+            if(rstPressStart == 0) rstPressStart = millis();
+            // Uscita dopo 100ms per una risposta veloce
+            if(millis() - rstPressStart > 100) {
+                common::debounceButton(buttonPin_RST, 50);
+                return;
+            }
+        } else {
+            rstPressStart = 0;
+        }
+
+        // Ridisegna solo quando necessario per evitare flickering
+        if (needRedraw) {
+            display.clearDisplay();
+            if (cardFound) {
+                common::print("UID trovato: ", 0, 0, 1, SSD1306_WHITE);
+
+                int base_x = common::getSpacing("UID trovato: ", 1);
+                int byte_width = common::getSpacing("FF", 1);
+
+                for (uint8_t i = 0; i < uidLength; i++) {
+                    sprintf(buffer, "%02X", uid[i]);
+                    int x = base_x + i * byte_width;
+                    common::print(buffer, x, 0, 1, SSD1306_WHITE);
+                }
+                
+                common::println("Avvicina altra carta", 0, 24, 1, SSD1306_WHITE);
+                common::println("o premi RST per", 0, 36, 1, SSD1306_WHITE);
+                common::println("uscire", 0, 48, 1, SSD1306_WHITE);
+            } else {
+                common::println("Avvicina il tag...", 0, 0, 1, SSD1306_WHITE);
+                common::println("", 0, 24, 1, SSD1306_WHITE);
+                common::println("RST: Esci", 0, 48, 1, SSD1306_WHITE);
+            }
+            display.display();
+            needRedraw = false;
+        }
+        
+        // Limitare la frequenza di scansione per ridurre il carico CPU
+        if (millis() - lastScanTime > 100) {
+            lastScanTime = millis();
+            if (nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+                cardFound = true;
+                needRedraw = true;
+                // Piccolo feedback sonoro o visivo potrebbe essere aggiunto qui
+            }
+        }
+        
+        delay(10);
+    }
 }

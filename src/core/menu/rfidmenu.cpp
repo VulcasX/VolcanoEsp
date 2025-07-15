@@ -6,12 +6,14 @@
 #include "core/config/config.h"
 #include "moduli/rfid/rfid.h" // Include il file per la gestione RFID
 #include "core/common/common.h" // Include il file comune per le funzioni condivise
+#include "moduli/rfid/rfid_advanced_menu.h" // Include il menu avanzato RFID
 
 
 const char* rfidItems[] = {
   "Scan Card",
   "Dump Card",
   "Write Card",
+  "RFID Tools",
   "Back"
 };
 
@@ -84,6 +86,9 @@ void rfidMenu() {
       } else if (selectedrfid == 1) {
         // Dump RFID
         dump();
+      } else if (selectedrfid == 3) {
+        // RFID Tools avanzati (MFCUK e MFOC)
+        rfid_advanced_menu();
       } else {
         // Placeholder per altre voci
         display.clearDisplay();

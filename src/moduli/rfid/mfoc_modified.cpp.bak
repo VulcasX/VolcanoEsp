@@ -1,0 +1,365 @@
+/**
+ * MFOC Modificato - Mifare Classic Offline Cracker
+ * Versione migliorata e aggiornata dell'implementazione originale
+ * 
+ * Basato su:
+ * - mfoc originale (https://github.com/nfc-tools/mfoc)
+ * - Adattato per funzionare con strutture dati ottimizzate
+ */
+
+#include <Arduino.h>
+#include <LittleFS.h>
+#include <Adafruit_SSD1306.h>
+#include "mfoc.h"
+#include "mfoc_modified.h"
+#include "mfcuk_types.h"
+#include "mfcuk_utils.h"
+#include "mfcuk_crypto.h"
+#include "rfid.h"
+#include "../../lib/input/input.h"
+#include "../../core/common/virtualkeyboard.h"
+#include "../../core/common/common.h"
+#include "../../core/littlefs/littlefs.h"
+
+// Riferimento al display OLED
+extern Adafruit_SSD1306 display;
+
+// Configurazione globale per MFOC
+MfocConfigMod gMfocConfigMod;
+
+/**
+ * Menu principale MFOC - Versione modificata
+ * Gestisce la navigazione e la selezione delle opzioni
+ */
+void mfoc_menu_mod() {
+    const char* voci[] = {"Configura", "Esegui", "Carica config", "Salva config", "Esci"};
+    const int vociCount = sizeof(voci)/sizeof(voci[0]);
+    int selezione = 0;
+    unsigned long rstPressStart = 0;
+    bool needRedraw = true;
+    
+    // Imposta la configurazione predefinita
+    gMfocConfigMod.known_key_type = KEY_A;
+    gMfocConfigMod.target_key_type = KEY_A;
+    gMfocConfigMod.target_sector = 0;
+    gMfocConfigMod.max_iterations = 1000;
+    gMfocConfigMod.num_probes = DEFAULT_PROBES_NR;
+    gMfocConfigMod.sets = DEFAULT_SETS_NR;
+    gMfocConfigMod.tolerance = DEFAULT_TOLERANCE;
+    gMfocConfigMod.load_keys_from_file = false;
+    memset(gMfocConfigMod.keys_file, 0, sizeof(gMfocConfigMod.keys_file));
+    
+    // Loop principale del menu
+    while(true) {
+        if (needRedraw) {
+            // Disegna l'interfaccia del menu
+            display.clearDisplay();
+            common::println("MFOC Menu Mod", 0, 0, 1, SSD1306_WHITE);
+            
+            for(int i=0; i<vociCount; i++) {
+                if(i == selezione) {
+                    display.fillRect(0, 10+i*12, 128, 12, SSD1306_WHITE);
+                    display.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
+                } else {
+                    display.setTextColor(SSD1306_WHITE);
+                }
+                display.setCursor(2, 12+i*12);
+                display.print(voci[i]);
+            }
+            
+            display.setTextColor(SSD1306_WHITE);
+            display.setCursor(0, 10+vociCount*12);
+            display.print("RST >2s per uscire");
+            display.display();
+            needRedraw = false;
+        }
+        
+        // Navigazione - pulsante UP
+        if(digitalRead(buttonPin_UP) == LOW) {
+            selezione--;
+            if(selezione < 0) selezione = vociCount-1;
+            common::debounceButton(buttonPin_UP, 120);
+            needRedraw = true;
+        }
+        
+        // Navigazione - pulsante DOWN
+        if(digitalRead(buttonPin_DWN) == LOW) {
+            selezione = (selezione+1)%vociCount;
+            common::debounceButton(buttonPin_DWN, 120);
+            needRedraw = true;
+        }
+        
+        // Selezione - pulsante SET
+        if(digitalRead(buttonPin_SET) == LOW) {
+            common::debounceButton(buttonPin_SET, 120);
+            switch(selezione) {
+                case 0: mfoc_config_mod(); break;  // Menu configurazione
+                case 1: mfoc_run_mod(&gMfocConfigMod); break; // Esecuzione attacco
+                case 2: /* Caricamento config - da implementare */ break;
+                case 3: /* Salvataggio config - da implementare */ break;
+                case 4: return; // Uscita
+            }
+            needRedraw = true;
+        }
+        
+        // Uscita con RST premuto >2s
+        if(digitalRead(buttonPin_RST) == LOW) {
+            if(rstPressStart == 0) rstPressStart = millis();
+            if(millis() - rstPressStart > 2000) return;
+        } else {
+            rstPressStart = 0;
+        }
+        
+        delay(10);  // Piccolo ritardo per evitare consumo CPU
+    }
+}
+
+/**
+ * Converte un array di byte in un numero a 64 bit
+ */
+uint64_t bytes_to_num_mod(uint8_t* src, uint32_t len) {
+    uint64_t num = 0;
+    while (len--) {
+        num = (num << 8) | (*src);
+        src++;
+    }
+    return num;
+}
+
+/**
+ * Converte un numero a 64 bit in un array di byte
+ */
+void num_to_bytes_mod(uint64_t n, uint32_t len, uint8_t* dest) {
+    while (len--) {
+        dest[len] = (uint8_t) n;
+        n >>= 8;
+    }
+}
+
+/**
+ * Menu di configurazione MFOC - Versione modificata
+ * Permette di impostare tutti i parametri dell'attacco
+ */
+void mfoc_config_mod() {
+    const char* voci[] = {"Chiave nota", "Tipo chiave nota", "Target", "File chiavi", "Iterazioni", "Esci"};
+    const int vociCount = sizeof(voci)/sizeof(voci[0]);
+    int selezione = 0;
+    int top = 0;
+    int visibili = 5; // Numero di voci visibili contemporaneamente
+    unsigned long rstPressStart = 0;
+    bool needRedraw = true;
+    
+    while(true) {
+        if (needRedraw) {
+            display.clearDisplay();
+            common::println("MFOC Config Mod", 0, 0, 1, SSD1306_WHITE);
+            
+            // Visualizza le voci del menu con scrolling
+            for(int i=0; i<visibili; i++) {
+                int idx = top+i;
+                if(idx >= vociCount) break;
+                
+                if(idx == selezione) {
+                    display.fillRect(0, 10+i*12, 120, 12, SSD1306_WHITE);
+                    display.setTextColor(SSD1306_BLACK, SSD1306_WHITE);
+                } else {
+                    display.setTextColor(SSD1306_WHITE);
+                }
+                
+                display.setCursor(2, 12+i*12);
+                display.print(voci[idx]);
+            }
+            
+            display.setTextColor(SSD1306_WHITE);
+            display.setCursor(0, 10+visibili*12+2);
+            display.print("RST >2s per uscire");
+            
+            // Descrizione contestuale dell'opzione selezionata
+            display.setCursor(0, 64-10);
+            switch(selezione) {
+                case 0: display.print("Imposta chiave nota"); break;
+                case 1: display.print("Tipo chiave: "); 
+                        display.print(gMfocConfigMod.known_key_type == KEY_B ? "B" : "A"); break;
+                case 2: display.print("Settore target: "); 
+                        display.print(gMfocConfigMod.target_sector); break;
+                case 3: 
+                    if(gMfocConfigMod.load_keys_from_file) {
+                        display.print("File: ");
+                        display.print(gMfocConfigMod.keys_file);
+                    } else {
+                        display.print("Usa chiavi default");
+                    }
+                    break;
+                case 4: display.print("Iterazioni: "); 
+                        display.print(gMfocConfigMod.max_iterations); break;
+                case 5: display.print("Torna al menu MFOC Mod"); break;
+            }
+            
+            display.display();
+            needRedraw = false;
+        }
+        
+        // Navigazione - pulsante UP
+        if(digitalRead(buttonPin_UP) == LOW) {
+            selezione--;
+            if(selezione < 0) selezione = vociCount-1;
+            
+            // Aggiorna la vista se necessario
+            if(selezione < top) top = selezione;
+            if(selezione >= top+visibili) top = selezione-visibili+1;
+            
+            common::debounceButton(buttonPin_UP, 120);
+            needRedraw = true;
+        }
+        
+        // Navigazione - pulsante DOWN
+        if(digitalRead(buttonPin_DWN) == LOW) {
+            selezione = (selezione+1)%vociCount;
+            
+            // Aggiorna la vista se necessario
+            if(selezione < top) top = selezione;
+            if(selezione >= top+visibili) top = selezione-visibili+1;
+            
+            common::debounceButton(buttonPin_DWN, 120);
+            needRedraw = true;
+        }
+        
+        // Selezione - pulsante SET
+        if(digitalRead(buttonPin_SET) == LOW) {
+            common::debounceButton(buttonPin_SET, 120);
+            
+            switch(selezione) {
+                case 0: mfoc_set_known_key_mod(); break;           // Imposta chiave nota
+                case 1: mfoc_set_known_key_type_mod(); break;      // Imposta tipo chiave nota
+                case 2: mfoc_set_target_mod(); break;              // Imposta target
+                case 3: mfoc_set_key_file_mod(); break;            // Imposta file chiavi
+                case 4: mfoc_set_iterations_mod(); break;          // Imposta iterazioni
+                case 5: return;  // Esci
+            }
+            
+            needRedraw = true;
+        }
+        
+        // Uscita con RST premuto >2s
+        if(digitalRead(buttonPin_RST) == LOW) {
+            if(rstPressStart == 0) rstPressStart = millis();
+            if(millis() - rstPressStart > 2000) return;
+        } else {
+            rstPressStart = 0;
+        }
+        
+        delay(10);
+    }
+}
+
+/**
+ * Versione semplificata per implementare le funzioni di configurazione
+ * In un'implementazione reale, queste funzioni sarebbero complete
+ */
+void mfoc_set_known_key_mod() {
+    display.clearDisplay();
+    common::println("Impostare chiave", 0, 0, 1, SSD1306_WHITE);
+    common::println("Funzionalità demo", 0, 16, 1, SSD1306_WHITE);
+    display.display();
+    delay(2000);
+}
+
+void mfoc_set_known_key_type_mod() {
+    display.clearDisplay();
+    common::println("Impostare tipo chiave", 0, 0, 1, SSD1306_WHITE);
+    common::println("Funzionalità demo", 0, 16, 1, SSD1306_WHITE);
+    display.display();
+    delay(2000);
+}
+
+void mfoc_set_target_mod() {
+    display.clearDisplay();
+    common::println("Impostare target", 0, 0, 1, SSD1306_WHITE);
+    common::println("Funzionalità demo", 0, 16, 1, SSD1306_WHITE);
+    display.display();
+    delay(2000);
+}
+
+void mfoc_set_key_file_mod() {
+    display.clearDisplay();
+    common::println("Impostare file chiavi", 0, 0, 1, SSD1306_WHITE);
+    common::println("Funzionalità demo", 0, 16, 1, SSD1306_WHITE);
+    display.display();
+    delay(2000);
+}
+
+void mfoc_set_iterations_mod() {
+    display.clearDisplay();
+    common::println("Impostare iterazioni", 0, 0, 1, SSD1306_WHITE);
+    common::println("Funzionalità demo", 0, 16, 1, SSD1306_WHITE);
+    display.display();
+    delay(2000);
+}
+
+/**
+ * Aggiorna la barra di progresso e lo stato dell'attacco sul display
+ */
+void mfoc_update_progress_mod(int progress, const char* status) {
+    display.clearDisplay();
+    common::println(status, 0, 0, 1, SSD1306_WHITE);
+    
+    // Barra progresso
+    int barWidth = (progress * 128) / 100;
+    display.fillRect(0, 20, barWidth, 8, SSD1306_WHITE);
+    display.drawRect(0, 20, 128, 8, SSD1306_WHITE);
+    
+    // Percentuale
+    char percent[8];
+    sprintf(percent, "%d%%", progress);
+    int16_t x1, y1;
+    uint16_t w, h;
+    display.getTextBounds(percent, 0, 0, &x1, &y1, &w, &h);
+    common::println(percent, (128-w)/2, 40, 1, SSD1306_WHITE);
+    
+    display.display();
+}
+
+/**
+ * Implementazione base dell'esecuzione dell'attacco
+ * In un'implementazione reale, qui ci sarebbe il codice per l'attacco
+ */
+bool mfoc_run_mod(MfocConfigMod* config, MfocCard* card) {
+    mfoc_update_progress_mod(0, "Inizializzazione...");
+    delay(500);
+    
+    mfoc_update_progress_mod(25, "Raccolta nonce...");
+    delay(500);
+    
+    mfoc_update_progress_mod(50, "Ricerca chiave...");
+    delay(500);
+    
+    mfoc_update_progress_mod(75, "Finalizzazione...");
+    delay(500);
+    
+    mfoc_update_progress_mod(100, "Completato!");
+    delay(1000);
+    
+    display.clearDisplay();
+    common::println("MFOC Mod", 0, 0, 1, SSD1306_WHITE);
+    common::println("Demo completata!", 0, 16, 1, SSD1306_WHITE);
+    display.display();
+    delay(2000);
+    
+    return true;
+}
+
+/**
+ * Seleziona un file delle chiavi dal file system
+ */
+bool mfoc_select_key_file_mod(char* filename, size_t max_len) {
+    // Utilizziamo la nostra funzione per navigare il filesystem locale
+    String selectedFile = browse_files("/");
+    
+    if(selectedFile.length() > 0) {
+        strncpy(filename, selectedFile.c_str(), max_len - 1);
+        filename[max_len - 1] = '\0';
+        return true;
+    }
+    
+    return false;
+}
